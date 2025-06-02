@@ -3,7 +3,7 @@
  * Plugin Name:       Woo Keep Orderable
  * Plugin URI:        https://github.com/dataforge/woo-keep-orderable
  * Description:       Keeps all products in a selected WooCommerce category always available to order, even if out of stock. Sets stock status to "on backorder" and enables backorders with notification for all products and variations in the category.
- * Version:           1.0.0
+ * Version:           1.10
  * Author:            Dataforge
  * License:           GPL2
  * Text Domain:       woo-keep-orderable
