@@ -87,6 +87,33 @@ function woo_keep_orderable_admin_page() {
         </h2>
 
         <?php if ($active_tab === 'settings'): ?>
+            <?php
+            // Handle "Check for Plugin Updates" button
+            if (isset($_POST['woo_keep_orderable_check_update']) && check_admin_referer('woo_keep_orderable_settings_nonce', 'woo_keep_orderable_settings_nonce')) {
+                // Simulate the cron event for plugin update check
+                do_action('wp_update_plugins');
+                if (function_exists('wp_clean_plugins_cache')) {
+                    wp_clean_plugins_cache(true);
+                }
+                // Remove the update_plugins transient to force a check
+                delete_site_transient('update_plugins');
+                // Call the update check directly as well
+                if (function_exists('wp_update_plugins')) {
+                    wp_update_plugins();
+                }
+                // Get update info
+                $plugin_file = plugin_basename(__FILE__);
+                $update_plugins = get_site_transient('update_plugins');
+                $update_msg = '';
+                if (isset($update_plugins->response) && isset($update_plugins->response[$plugin_file])) {
+                    $new_version = $update_plugins->response[$plugin_file]->new_version;
+                    $update_msg = '<div class="updated"><p>Update available: version ' . esc_html($new_version) . '.</p></div>';
+                } else {
+                    $update_msg = '<div class="updated"><p>No update available for this plugin.</p></div>';
+                }
+                echo $update_msg;
+            }
+            ?>
             <form method="post" action="">
                 <?php wp_nonce_field('woo_keep_orderable_settings_action', 'woo_keep_orderable_settings_nonce'); ?>
                 <table class="form-table">
@@ -120,6 +147,11 @@ function woo_keep_orderable_admin_page() {
                     </tr>
                 </table>
                 <input type="submit" class="button button-primary" value="Save Settings" />
+            </form>
+            <form method="post" action="" style="margin-top:2em;">
+                <?php wp_nonce_field('woo_keep_orderable_settings_nonce', 'woo_keep_orderable_settings_nonce'); ?>
+                <input type="hidden" name="woo_keep_orderable_check_update" value="1">
+                <?php submit_button('Check for Plugin Updates', 'secondary'); ?>
             </form>
         <?php else: ?>
             <div style="max-width:700px;">
