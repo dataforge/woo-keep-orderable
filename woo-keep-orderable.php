@@ -60,17 +60,21 @@ function woo_keep_orderable_admin_page() {
     if ($active_tab === 'settings' && isset($_POST['woo_keep_orderable_settings_nonce']) && wp_verify_nonce($_POST['woo_keep_orderable_settings_nonce'], 'woo_keep_orderable_settings_action')) {
         $enable_auto_run = isset($_POST['enable_auto_run']) ? 1 : 0;
         $auto_run_interval = isset($_POST['auto_run_interval']) ? max(1, intval($_POST['auto_run_interval'])) : 10;
-        $target_category = isset($_POST['target_category']) ? sanitize_text_field($_POST['target_category']) : '';
+        $target_categories = isset($_POST['target_categories']) && is_array($_POST['target_categories']) ? array_map('intval', $_POST['target_categories']) : array();
         update_option('woo_keep_orderable_enable_auto_run', $enable_auto_run);
         update_option('woo_keep_orderable_auto_run_interval', $auto_run_interval);
-        update_option('woo_keep_orderable_target_category', $target_category);
+        update_option('woo_keep_orderable_target_categories', $target_categories);
         // Reschedule or clear cron based on settings
         woo_keep_orderable_reschedule_cron($enable_auto_run, $auto_run_interval);
         echo '<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>';
     }
+    
+    // Migrate old single category setting to new multi-category format
+    woo_keep_orderable_migrate_single_category();
+    
     $enable_auto_run = get_option('woo_keep_orderable_enable_auto_run', 1);
     $auto_run_interval = get_option('woo_keep_orderable_auto_run_interval', 10);
-    $target_category = get_option('woo_keep_orderable_target_category', '');
+    $target_categories = get_option('woo_keep_orderable_target_categories', array());
 
     // Get all product categories
     $categories = get_terms(array(
@@ -132,17 +136,12 @@ function woo_keep_orderable_admin_page() {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Target Category</th>
+                        <th scope="row">Target Categories</th>
                         <td>
-                            <select name="target_category" required>
-                                <option value="">-- Select Category --</option>
-                                <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo esc_attr($cat->term_id); ?>" <?php selected($target_category, $cat->term_id); ?>>
-                                        <?php echo esc_html($cat->name); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">Choose the product category to target for stock status fix.</p>
+                            <div id="category-checkboxes" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fff;">
+                                <?php woo_keep_orderable_render_category_checkboxes($categories, $target_categories); ?>
+                            </div>
+                            <p class="description">Select one or more product categories to target for stock status fix. Checking a parent category will automatically select all subcategories.</p>
                         </td>
                     </tr>
                 </table>
@@ -159,7 +158,7 @@ function woo_keep_orderable_admin_page() {
                     <strong>What does this tool do?</strong>
                 </p>
                 <ul style="list-style:disc; margin-left:20px;">
-                    <li>Keeps all products in the selected category always available to order, even if out of stock.</li>
+                    <li>Keeps all products in the selected categories always available to order, even if out of stock.</li>
                     <li>Sets stock status to <strong>on backorder</strong> for products and variations with zero or negative stock.</li>
                     <li>Enables backorders with notification for all products and variations in the category.</li>
                     <li>Ensures "manage stock" is enabled for all variations, so the stock status and backorder logic can be applied.</li>
@@ -214,34 +213,33 @@ add_action('init', function() {
     woo_keep_orderable_reschedule_cron($enable_auto_run, $auto_run_interval);
 });
 
-// Use the selected category from settings for stock status fix
+// Use the selected categories from settings for stock status fix
 function woo_keep_orderable_update_products() {
-    $category_id = get_option('woo_keep_orderable_target_category', '');
-    if (!$category_id) {
-        return; // No category selected
+    $category_ids = get_option('woo_keep_orderable_target_categories', array());
+    if (empty($category_ids)) {
+        return; // No categories selected
     }
-    $category = get_term_by('id', $category_id, 'product_cat');
-    if ($category) {
-        $args = array(
-            'post_type'      => 'product',
-            'posts_per_page' => -1,
-            'tax_query'      => array(
-                array(
-                    'taxonomy' => 'product_cat',
-                    'field'    => 'term_id',
-                    'terms'    => $category->term_id,
-                ),
+    
+    $args = array(
+        'post_type'      => 'product',
+        'posts_per_page' => -1,
+        'tax_query'      => array(
+            array(
+                'taxonomy' => 'product_cat',
+                'field'    => 'term_id',
+                'terms'    => $category_ids,
+                'operator' => 'IN',
             ),
-        );
+        ),
+    );
 
-        $products = get_posts($args);
+    $products = get_posts($args);
 
-        foreach ($products as $product_post) {
-            $product = wc_get_product($product_post->ID);
-            woo_keep_orderable_update_stock_status_and_backorders($product);
-        }
-        wp_reset_postdata();
+    foreach ($products as $product_post) {
+        $product = wc_get_product($product_post->ID);
+        woo_keep_orderable_update_stock_status_and_backorders($product);
     }
+    wp_reset_postdata();
 }
 // Schedule the update function to be called by the scheduled event
 add_action('woo_keep_orderable_update_products_hook', 'woo_keep_orderable_update_products');
@@ -307,3 +305,131 @@ function woo_keep_orderable_deactivate() {
     }
 }
 register_deactivation_hook(__FILE__, 'woo_keep_orderable_deactivate');
+
+// Migration function to convert old single category to new multi-category format
+function woo_keep_orderable_migrate_single_category() {
+    $old_category = get_option('woo_keep_orderable_target_category', '');
+    $new_categories = get_option('woo_keep_orderable_target_categories', null);
+    
+    // Only migrate if old setting exists and new setting doesn't exist yet
+    if (!empty($old_category) && $new_categories === null) {
+        update_option('woo_keep_orderable_target_categories', array(intval($old_category)));
+        delete_option('woo_keep_orderable_target_category'); // Clean up old option
+    }
+}
+
+// Get categories organized hierarchically
+function woo_keep_orderable_get_categories_hierarchical($categories) {
+    $hierarchy = array();
+    $all_categories = array();
+    
+    // Index all categories by ID and initialize children array
+    foreach ($categories as $category) {
+        $category->children = array();
+        $all_categories[$category->term_id] = $category;
+    }
+    
+    // Build hierarchy by assigning children to parents
+    foreach ($categories as $category) {
+        if ($category->parent == 0) {
+            // Top-level category
+            $hierarchy[$category->term_id] = $category;
+        } else {
+            // Child category - assign to parent if parent exists
+            if (isset($all_categories[$category->parent])) {
+                $all_categories[$category->parent]->children[] = $category;
+            } else {
+                // Parent not found, treat as top-level
+                $hierarchy[$category->term_id] = $category;
+            }
+        }
+    }
+    
+    return $hierarchy;
+}
+
+// Render category checkboxes with hierarchy
+function woo_keep_orderable_render_category_checkboxes($categories, $selected_categories = array()) {
+    if (empty($categories)) {
+        echo '<p>No categories found.</p>';
+        return;
+    }
+    
+    $hierarchy = woo_keep_orderable_get_categories_hierarchical($categories);
+    
+    // Add JavaScript for parent/child checkbox behavior
+    ?>
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        // Handle parent checkbox changes
+        $('.parent-category-checkbox').change(function() {
+            var isChecked = $(this).is(':checked');
+            var parentId = $(this).data('parent-id');
+            
+            // Check/uncheck all children
+            $('.child-category-checkbox[data-parent="' + parentId + '"]').prop('checked', isChecked);
+        });
+        
+        // Handle child checkbox changes
+        $('.child-category-checkbox').change(function() {
+            var parentId = $(this).data('parent');
+            var allChildren = $('.child-category-checkbox[data-parent="' + parentId + '"]');
+            var checkedChildren = $('.child-category-checkbox[data-parent="' + parentId + '"]:checked');
+            
+            // If all children are checked, check parent
+            // If no children are checked, uncheck parent
+            // If some children are checked, leave parent as user set it
+            if (checkedChildren.length === allChildren.length) {
+                $('.parent-category-checkbox[data-parent-id="' + parentId + '"]').prop('checked', true);
+            } else if (checkedChildren.length === 0) {
+                $('.parent-category-checkbox[data-parent-id="' + parentId + '"]').prop('checked', false);
+            }
+        });
+    });
+    </script>
+    <?php
+    
+    foreach ($hierarchy as $parent) {
+        $is_checked = in_array($parent->term_id, $selected_categories);
+        $has_children = !empty($parent->children);
+        
+        echo '<div style="margin-bottom: 5px;">';
+        echo '<label style="font-weight: bold;">';
+        echo '<input type="checkbox" name="target_categories[]" value="' . esc_attr($parent->term_id) . '"';
+        echo $is_checked ? ' checked' : '';
+        echo $has_children ? ' class="parent-category-checkbox" data-parent-id="' . esc_attr($parent->term_id) . '"' : '';
+        echo '> ';
+        echo esc_html($parent->name);
+        echo '</label>';
+        echo '</div>';
+        
+        // Render children
+        if ($has_children) {
+            woo_keep_orderable_render_child_categories($parent->children, $selected_categories, $parent->term_id, 1);
+        }
+    }
+}
+
+// Recursively render child categories
+function woo_keep_orderable_render_child_categories($children, $selected_categories, $parent_id, $level = 1) {
+    $indent = $level * 20; // 20px per level
+    
+    foreach ($children as $child) {
+        $is_checked = in_array($child->term_id, $selected_categories);
+        
+        echo '<div style="margin-left: ' . $indent . 'px; margin-bottom: 3px;">';
+        echo '<label>';
+        echo '<input type="checkbox" name="target_categories[]" value="' . esc_attr($child->term_id) . '"';
+        echo $is_checked ? ' checked' : '';
+        echo ' class="child-category-checkbox" data-parent="' . esc_attr($parent_id) . '"';
+        echo '> ';
+        echo esc_html($child->name);
+        echo '</label>';
+        echo '</div>';
+        
+        // Handle nested children (subcategories of subcategories)
+        if (!empty($child->children)) {
+            woo_keep_orderable_render_child_categories($child->children, $selected_categories, $parent_id, $level + 1);
+        }
+    }
+}
