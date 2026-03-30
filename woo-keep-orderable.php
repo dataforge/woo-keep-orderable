@@ -3,16 +3,22 @@
  * Plugin Name:       Woo Keep Orderable
  * Plugin URI:        https://github.com/dataforge/woo-keep-orderable
  * Description:       Keeps all products in a selected WooCommerce category always available to order, even if out of stock. Sets stock status to "on backorder" and enables backorders with notification for all products and variations in the category.
- * Version:           1.10
+ * Version:           1.11
  * Author:            Dataforge
  * License:           GPL2
  * Text Domain:       woo-keep-orderable
- * GitHub Plugin URI: https://github.com/dataforge/woo-keep-orderable
+ * Update URI:        https://github.com/dataforge/woo-keep-orderable
  */
+
+define( 'WOO_KEEP_ORDERABLE_VERSION', '1.11' );
+define( 'WOO_KEEP_ORDERABLE_FILE', __FILE__ );
 
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
+
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-updater.php';
+Woo_Keep_Orderable_Updater::init();
 
 
 // Add custom admin page under WooCommerce menu
@@ -92,32 +98,10 @@ function woo_keep_orderable_admin_page() {
 
         <?php if ($active_tab === 'settings'): ?>
             <?php
-            // Handle "Check for Plugin Updates" button
-            if (isset($_POST['woo_keep_orderable_check_update']) && check_admin_referer('woo_keep_orderable_settings_nonce', 'woo_keep_orderable_settings_nonce')) {
-                // Simulate the cron event for plugin update check
-                do_action('wp_update_plugins');
-                if (function_exists('wp_clean_plugins_cache')) {
-                    wp_clean_plugins_cache(true);
-                }
-                // Remove the update_plugins transient to force a check
-                delete_site_transient('update_plugins');
-                // Call the update check directly as well
-                if (function_exists('wp_update_plugins')) {
-                    wp_update_plugins();
-                }
-                // Get update info
-                $plugin_file = plugin_basename(__FILE__);
-                $update_plugins = get_site_transient('update_plugins');
-                $update_msg = '';
-                if (isset($update_plugins->response) && isset($update_plugins->response[$plugin_file])) {
-                    $new_version = $update_plugins->response[$plugin_file]->new_version;
-                    $update_msg = '<div class="updated"><p>Update available: version ' . esc_html($new_version) . '.</p></div>';
-                } else {
-                    $update_msg = '<div class="updated"><p>No update available for this plugin.</p></div>';
-                }
-                echo $update_msg;
-            }
-            ?>
+            <?php if ( isset( $_GET['update_check'] ) ): ?>
+                <div class="updated"><p>Update check complete. If an update is available it will appear in <a href="<?php echo esc_url( admin_url( 'update-core.php' ) ); ?>">Dashboard &rsaquo; Updates</a>.</p></div>
+            <?php endif; ?>
+            <?php
             <form method="post" action="">
                 <?php wp_nonce_field('woo_keep_orderable_settings_action', 'woo_keep_orderable_settings_nonce'); ?>
                 <table class="form-table">
@@ -147,10 +131,10 @@ function woo_keep_orderable_admin_page() {
                 </table>
                 <input type="submit" class="button button-primary" value="Save Settings" />
             </form>
-            <form method="post" action="" style="margin-top:2em;">
-                <?php wp_nonce_field('woo_keep_orderable_settings_nonce', 'woo_keep_orderable_settings_nonce'); ?>
-                <input type="hidden" name="woo_keep_orderable_check_update" value="1">
-                <?php submit_button('Check for Plugin Updates', 'secondary'); ?>
+            <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:2em;">
+                <input type="hidden" name="action" value="woo_keep_orderable_check_updates" />
+                <?php wp_nonce_field( 'woo_keep_orderable_check_updates' ); ?>
+                <?php submit_button( 'Check for Plugin Updates', 'secondary' ); ?>
             </form>
         <?php else: ?>
             <div style="max-width:700px;">
