@@ -3,14 +3,14 @@
  * Plugin Name:       Woo Keep Orderable
  * Plugin URI:        https://github.com/dataforge/woo-keep-orderable
  * Description:       Keeps all products in a selected WooCommerce category always available to order, even if out of stock. Sets stock status to "on backorder" and enables backorders with notification for all products and variations in the category.
- * Version:           1.11.1
+ * Version:           1.12
  * Author:            Dataforge
  * License:           GPL2
  * Text Domain:       woo-keep-orderable
  * Update URI:        https://github.com/dataforge/woo-keep-orderable
  */
 
-define( 'WOO_KEEP_ORDERABLE_VERSION', '1.11.1' );
+define( 'WOO_KEEP_ORDERABLE_VERSION', '1.12' );
 define( 'WOO_KEEP_ORDERABLE_FILE', __FILE__ );
 
 if (!defined('ABSPATH')) {
@@ -97,9 +97,6 @@ function woo_keep_orderable_admin_page() {
         </h2>
 
         <?php if ($active_tab === 'settings'): ?>
-            <?php if ( isset( $_GET['update_check'] ) ): ?>
-                <div class="updated"><p>Update check complete. If an update is available it will appear in <a href="<?php echo esc_url( admin_url( 'update-core.php' ) ); ?>">Dashboard &rsaquo; Updates</a>.</p></div>
-            <?php endif; ?>
             <form method="post" action="">
                 <?php wp_nonce_field('woo_keep_orderable_settings_action', 'woo_keep_orderable_settings_nonce'); ?>
                 <table class="form-table">
@@ -129,11 +126,23 @@ function woo_keep_orderable_admin_page() {
                 </table>
                 <input type="submit" class="button button-primary" value="Save Settings" />
             </form>
-            <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:2em;">
-                <input type="hidden" name="action" value="woo_keep_orderable_check_updates" />
-                <?php wp_nonce_field( 'woo_keep_orderable_check_updates' ); ?>
-                <?php submit_button( 'Check for Plugin Updates', 'secondary' ); ?>
-            </form>
+            <div class="card" style="margin-top:2em;">
+                <h2>Plugin Updates</h2>
+                <p>Current version: <strong>v<?php echo esc_html( WOO_KEEP_ORDERABLE_VERSION ); ?></strong>
+                <?php if ( isset( $_GET['update_check'] ) ) : ?>
+                    <?php if ( Woo_Keep_Orderable_Updater::is_update_available() ) : ?>
+                        &mdash; <span style="color:#b32d2e;">Update available!</span> <a href="<?php echo esc_url( admin_url( 'update-core.php' ) ); ?>">Go to Updates</a>
+                    <?php else : ?>
+                        &mdash; <span style="color:#00a32a;">Up to date</span>
+                    <?php endif; ?>
+                <?php endif; ?>
+                </p>
+                <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;">
+                    <input type="hidden" name="action" value="woo_keep_orderable_check_updates" />
+                    <?php wp_nonce_field( 'woo_keep_orderable_check_updates' ); ?>
+                    <button type="submit" class="button">Check for Updates</button>
+                </form>
+            </div>
         <?php else: ?>
             <div style="max-width:700px;">
                 <p>

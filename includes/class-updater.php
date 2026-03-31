@@ -112,11 +112,26 @@ class Woo_Keep_Orderable_Updater {
 		wp_clean_plugins_cache( true );
 		wp_update_plugins();
 
-		wp_safe_redirect( add_query_arg(
-			array( 'update_check' => '1' ),
-			admin_url( 'admin.php?page=woo_keep_orderable&tab=settings' )
-		) );
+		$release = self::fetch_latest_release();
+		$status  = 'up_to_date';
+		if ( $release ) {
+			$remote_version = ltrim( $release->tag_name, 'v' );
+			if ( version_compare( WOO_KEEP_ORDERABLE_VERSION, $remote_version, '<' ) ) {
+				$status = 'update_available';
+			}
+		}
+
+		wp_safe_redirect( add_query_arg( array( 'update_check' => $status ), admin_url( 'admin.php?page=woo_keep_orderable&tab=settings' ) ) );
 		exit;
+	}
+
+	public static function is_update_available() {
+		$release = get_transient( self::CACHE_KEY );
+		if ( ! $release || empty( $release->tag_name ) ) {
+			return false;
+		}
+		$remote_version = ltrim( $release->tag_name, 'v' );
+		return version_compare( WOO_KEEP_ORDERABLE_VERSION, $remote_version, '<' );
 	}
 
 	private static function get_asset_url( $release ) {
